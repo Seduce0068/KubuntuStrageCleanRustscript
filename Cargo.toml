@@ -1,0 +1,18 @@
+[package]
+name = "storage-scanner"
+version = "0.1.0"
+edition = "2021"
+description = "システムのストレージをスキャンし、巨大で不要なディレクトリを検出するツール"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/your-repo/storage-scanner"
+readme = "README.md"
+
+[dependencies]
+# 標準ライブラリのみを使用するため依存関係は最小限
+# 必要に応じて walkdir などを追加可能
+walkdir = "2.5"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
