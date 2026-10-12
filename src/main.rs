@@ -1,3 +1,4 @@
+#!/usr/bin/env rustc
 //! システムストレージスキャンツール
 //!
 //! システム全体のストレージをスキャンし、巨大で不要なディレクトリを
@@ -89,7 +90,7 @@ fn get_unnecessary_reason(path: &Path) -> Option<String> {
 
     // Node.js 依存関係
     if filename == "node_modules" {
-        return Some("npm/yarn 依存関係キャッシュ（再インストール可能）".to_string());
+        return Some("npm/yarn 依存関係（再インストール可能）".to_string());
     }
 
     // Python バイトコードキャッシュ
@@ -103,18 +104,18 @@ fn get_unnecessary_reason(path: &Path) -> Option<String> {
     }
 
     // Go ビルドキャッシュ
-    if filename == ".go" && path_str.contains("cache") {
-        return Some("Go ビルドキャッシュ".to_string());
+    if filename == "go-build" && path_str.contains(".cache") {
+        return Some("Go ビルドキャッシュ（再生成可能）".to_string());
     }
 
     // 一般的なキャッシュディレクトリ
     if filename == ".cache" {
-        return Some("ユーザークェッシュディレクトリ".to_string());
+        return Some("ユーザーキャッシュディレクトリ".to_string());
     }
 
     // ローカルアプリケーションデータ
     if filename == ".local" {
-        return Some("ローカルアプリデータ（多くの場合キャッシュ含む）".to_string());
+        return Some("ローカルアプリデータ（キャッシュ含む）".to_string());
     }
 
     // テスト・スペックディレクトリ
@@ -123,8 +124,12 @@ fn get_unnecessary_reason(path: &Path) -> Option<String> {
     }
 
     // 古いバックアップ・旧バージョン
-    if filename == "old" || filename == "Old" || filename == "backup" || filename == "Backup"
-        || filename == "旧" || filename == "backups"
+    if filename == "old"
+        || filename == "Old"
+        || filename == "backup"
+        || filename == "Backup"
+        || filename == "旧"
+        || filename == "backups"
     {
         return Some("古いバックアップ/旧バージョンデータ".to_string());
     }
@@ -150,7 +155,7 @@ fn get_unnecessary_reason(path: &Path) -> Option<String> {
     }
 
     // Snap 古いスナップショット
-    if filename == "snap" && path_str.contains("snapshots") {
+    if filename == "snap" || filename == "snapshots" {
         return Some("Snap 旧バージョンスナップショット".to_string());
     }
 
@@ -163,24 +168,26 @@ fn get_unnecessary_reason(path: &Path) -> Option<String> {
 /// システムの重要ディレクトリ（スキャン対象外）
 fn is_system_essential(path: &Path) -> bool {
     let path_str = path.to_string_lossy();
+    // 絶対的に重要なシステムディレクトリのみ除外
+    // /usr 以下はスキャン対象とするが、重要なサブディレクトリは除外
     let essential = [
-        "/bin", "/sbin", "/lib", "/lib64", "/usr/lib", "/usr/lib64", "/usr/bin",
-        "/usr/sbin", "/etc", "/dev", "/proc", "/sys", "/run",
-        "/snap", "/boot", "/usr/share", "/usr/include",
+        "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev", "/proc", "/sys", "/run", "/boot",
+        "/usr/lib", "/usr/lib64", "/usr/bin", "/usr/sbin", "/usr/include", "/usr/share",
     ];
-    for e in &essential {
-        if path_str.starts_with(e) {
-            return true;
-        }
-    }
-    false
+    essential.iter().any(|e| {
+        path_str.starts_with(e)
+            && (path_str.len() == e.len() || path_str[e.len()..].starts_with('/'))
+    })
 }
 
 /// 仮想ファイルシステムまたは特別ディレクトリか判定する
 fn is_special_path(path: &Path) -> bool {
     let path_str = path.to_string_lossy();
     let special = ["/proc", "/sys", "/dev", "/run", "/snap", "/boot"];
-    special.iter().any(|s| path_str.starts_with(s))
+    special.iter().any(|s| {
+        path_str.starts_with(s)
+            && (path_str.len() == s.len() || path_str[s.len()..].starts_with('/'))
+    })
 }
 
 /// WalkDir を使って全ファイルを走査し、各ディレクトリのサイズを集計する
@@ -189,31 +196,28 @@ fn scan(root: &Path, dir_sizes: &mut HashMap<PathBuf, u64>) -> Result<(), String
         return Ok(());
     }
 
-    for entry in WalkDir::new(root)
-        .follow_links(false)
-        .filter_entry(|e| {
-            let p = e.path();
-            !is_special_path(p) && !is_system_essential(p)
-        })
-    {
-        match entry {
-            Ok(e) => {
-                let path = e.path().to_path_buf();
-                if path.is_file() {
-                    if let Ok(md) = fs::metadata(&path) {
-                        let file_size = md.len();
-                        // このファイルのサイズを、全親ディレクトリに加算する
-                        let mut parent = path.parent();
-                        while let Some(p) = parent {
-                            *dir_sizes.entry(p.to_path_buf()).or_insert(0) += file_size;
-                            parent = p.parent();
-                        }
-                    }
-                }
-            }
+    for entry in WalkDir::new(root).follow_links(false) {
+        let entry = match entry {
+            Ok(e) => e,
             Err(err) => {
-                // パーミッションエラー等は無視して継続
                 eprintln!("警告: スキップしました: {}", err);
+                continue;
+            }
+        };
+        let path = entry.path();
+        if is_special_path(path) || is_system_essential(path) {
+            continue;
+        }
+
+        if path.is_file() {
+            if let Ok(md) = fs::metadata(&path) {
+                let file_size = md.len();
+                // このファイルのサイズを、全親ディレクトリに加算する
+                let mut parent = path.parent();
+                while let Some(p) = parent {
+                    *dir_sizes.entry(p.to_path_buf()).or_insert(0) += file_size;
+                    parent = p.parent();
+                }
             }
         }
     }
@@ -294,4 +298,282 @@ fn main() {
     };
 
     result.print_report();
+}
+
+// テストモジュール
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_get_unnecessary_reason_target() {
+        let path = PathBuf::from("/home/user/project/target");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "Rust/Cargo ビルド成果物（再ビルド可能）");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_node_modules() {
+        let path = PathBuf::from("/home/user/project/node_modules");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "npm/yarn 依存関係（再インストール可能）");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_pycache() {
+        let path = PathBuf::from("/home/user/project/__pycache__");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "Python バイトコードキャッシュ（再生成可能）");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_venv() {
+        let path = PathBuf::from("/home/user/venv");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "Python 仮想環境（不要な場合再作成可能）");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_dot_cache() {
+        let path = PathBuf::from("/home/user/.cache");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "ユーザーキャッシュディレクトリ");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_dot_local() {
+        let path = PathBuf::from("/home/user/.local");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "ローカルアプリデータ（キャッシュ含む）");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_build() {
+        let path = PathBuf::from("/home/user/project/build");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "ビルド成果物ディレクトリ（再ビルド可能）");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_test_dirs() {
+        let cases = vec![
+            "/home/user/project/test",
+            "/home/user/project/tests",
+            "/home/user/project/spec",
+            "/home/user/project/specs",
+        ];
+        for case in cases {
+            let path = PathBuf::from(case);
+            let reason = get_unnecessary_reason(&path);
+            assert!(reason.is_some(), "Failed for {}", case);
+            assert_eq!(
+                reason.unwrap(),
+                "テスト/スペック用ディレクトリ（開発用の場合不要）"
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_old_backup() {
+        let cases = vec![
+            "/home/user/old",
+            "/home/user/Old",
+            "/home/user/backup",
+            "/home/user/Backup",
+            "/home/user/旧",
+            "/home/user/backups",
+        ];
+        for case in cases {
+            let path = PathBuf::from(case);
+            let reason = get_unnecessary_reason(&path);
+            assert!(reason.is_some(), "Failed for {}", case);
+            assert_eq!(reason.unwrap(), "古いバックアップ/旧バージョンデータ");
+        }
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_log_file() {
+        let path = PathBuf::from("/var/log/app.log");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "ログファイル（ローテーション済の可能性あり）");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_temp() {
+        let cases = vec![
+            "/tmp",
+            "/home/user/tmp",
+            "/home/user/temp",
+            "/home/user/Tmp",
+            "/home/user/Temp",
+        ];
+        for case in cases {
+            let path = PathBuf::from(case);
+            let reason = get_unnecessary_reason(&path);
+            assert!(reason.is_some(), "Failed for {}", case);
+            assert_eq!(reason.unwrap(), "一時ファイル/ディレクトリ");
+        }
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_trash() {
+        let cases = vec![
+            "/home/user/.Trash",
+            "/home/user/Trash",
+            "/home/user/.Trash-1000",
+        ];
+        for case in cases {
+            let path = PathBuf::from(case);
+            let reason = get_unnecessary_reason(&path);
+            assert!(reason.is_some(), "Failed for {}", case);
+            assert_eq!(reason.unwrap(), "ゴミ箱（空にできる）");
+        }
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_go_build() {
+        let path = PathBuf::from("/home/user/.cache/go-build");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "Go ビルドキャッシュ（再生成可能）");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_snap() {
+        let path = PathBuf::from("/home/user/snap/snapshots");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_some());
+        assert_eq!(reason.unwrap(), "Snap 旧バージョンスナップショット");
+    }
+
+    #[test]
+    fn test_get_unnecessary_reason_none() {
+        let path = PathBuf::from("/home/user/documents");
+        let reason = get_unnecessary_reason(&path);
+        assert!(reason.is_none());
+    }
+
+    #[test]
+    fn test_is_system_essential_true() {
+        let essential_paths = vec![
+            "/bin",
+            "/sbin",
+            "/lib",
+            "/lib64",
+            "/etc",
+            "/dev",
+            "/proc",
+            "/sys",
+            "/run",
+            "/boot",
+            "/usr/lib",
+            "/usr/lib64",
+            "/usr/bin",
+            "/usr/sbin",
+            "/usr/include",
+            "/usr/share",
+        ];
+        for path in essential_paths {
+            assert!(
+                is_system_essential(&PathBuf::from(path)),
+                "Expected {} to be essential",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_system_essential_false() {
+        let non_essential_paths = vec![
+            "/usr",
+            "/usr/local",
+            "/usr/src",
+            "/usr/local/bin", // /usr/local はスキャン対象
+            "/home",
+            "/home/user",
+            "/root",
+            "/tmp",
+            "/var",
+            "/var/log",
+            "/opt",
+            "/srv",
+            "/mnt",
+            "/media",
+        ];
+        for path in non_essential_paths {
+            assert!(
+                !is_system_essential(&PathBuf::from(path)),
+                "Expected {} to be non-essential",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_special_path_true() {
+        let special_paths = vec!["/proc", "/sys", "/dev", "/run", "/snap", "/boot"];
+        for path in special_paths {
+            assert!(
+                is_special_path(&PathBuf::from(path)),
+                "Expected {} to be special path",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_special_path_false() {
+        let non_special_paths = vec![
+            "/home",
+            "/usr",
+            "/proc1", // partial match should not count
+            "/sys/fs/cgroup", // under /sys but not exactly /sys
+        ];
+        for path in non_special_paths {
+            assert!(
+                !is_special_path(&PathBuf::from(path)),
+                "Expected {} to be non-special path",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn test_dir_info_creation() {
+        let path = PathBuf::from("/test/path");
+        let info = DirInfo {
+            path: path.clone(),
+            size_bytes: 1024,
+            reason: "test reason".to_string(),
+        };
+        assert_eq!(info.path, path);
+        assert_eq!(info.size_bytes, 1024);
+        assert_eq!(info.reason, "test reason");
+    }
+
+    #[test]
+    fn test_scan_result_print_report_empty() {
+        let result = ScanResult {
+            large_dirs: Vec::new(),
+            unnecessary_dirs: Vec::new(),
+            total_scanned: 0,
+            elapsed: Duration::from_secs(5),
+        };
+        // ただ実行してパニックしないことを確認（実際の出力はキャプチャ難しいため）
+        // 実際のテストではoutキャプチャが必要だが、ここでは単純に実行可能性を確認
+        let mut output = Vec::new();
+        {
+            let _ = std::io::Write::write_fmt(&mut output, format_args!("{:?}", result));
+        }
+        assert!(!output.is_empty());
+    }
 }

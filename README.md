@@ -28,6 +28,7 @@ rustc src/main.rs -o storage-scanner
 - `/var`
 - `/opt`
 - `/usr`
+- `/srv`
 
 ## 検出されるカテゴリ
 
@@ -38,17 +39,21 @@ rustc src/main.rs -o storage-scanner
 - 他の巨大なアプリケーション
 
 ### 不要なディレクトリ（削除候補）
-- `node_modules/` - npm/yarn 依存関係
-- `target/` - Rust/Cargo ビルド成果物
-- `build/` - ビルド出力
-- `.cache/` - キャッシュディレクトリ
-- `venv/` / `virtualenv/` - Python 仮想環境
-- `test/` / `spec/` - テストディレクトリ
-- `old/` - 古いバージョン
-- `snap/` - Snap 旧バージョン
-- `.local/` - GNOME カーネルキャッシュ
-- ログファイル/ディレクトリ
-- 仮想ファイルシステム (/proc, /sys, /dev)
+- `node_modules/` - npm/yarn 依存関係（再インストール可能）
+- `target/` - Rust/Cargo ビルド成果物（再ビルド可能）
+- `build/` - ビルド成果物ディレクトリ（再ビルド可能）
+- `.cache/` - ユーザーキャッシュディレクトリ
+- `venv/` / `.venv/` / `virtualenv/` - Python 仮想環境（不要な場合再作成可能）
+- `test/` / `tests/` / `spec/` / `specs/` - テスト/スペック用ディレクトリ（開発用の場合不要）
+- `old/` / `Old/` / `backup/` / `Backup/` / `旧/` / `backups/` - 古いバックアップ/旧バージョンデータ
+- `__pycache__/` - Python バイトコードキャッシュ（再生成可能）
+- `go-build/` (`.cache/` 以下) - Go ビルドキャッシュ（再生成可能）
+- `.local/` - ローカルアプリデータ（キャッシュ含む）
+- `*.log` - ログファイル（ローテーション済の可能性あり）
+- `tmp/` / `temp/` - 一時ファイル/ディレクトリ
+- `.Trash/` / `Trash/` / `.Trash-1000/` - ゴミ箱（空にできる）
+- `snap/snapshots/` - Snap 旧バージョンスナップショット
+- 仮想ファイルシステム (/proc, /sys, /dev) - スキャン対象外
 
 ## 出力例
 
