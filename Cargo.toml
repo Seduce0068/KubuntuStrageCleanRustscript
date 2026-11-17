@@ -16,3 +16,10 @@ walkdir = "2.5"
 lto = true
 codegen-units = 1
 opt-level = 3
+strip = true
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
