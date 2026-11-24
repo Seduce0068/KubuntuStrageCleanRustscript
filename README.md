@@ -11,12 +11,8 @@
 ## 使用方法
 
 ```bash
-# 直接実行
+# 直接実行（Cargo が依存関係を解決します）
 cargo run --release
-
-# または
-rustc src/main.rs -o storage-scanner
-./storage-scanner
 ```
 
 ## 対象ディレクトリ
@@ -74,7 +70,7 @@ rustc src/main.rs -o storage-scanner
     理由: 古いキャッシュディレクトリ
   パス: /home/user/node_modules
     サイズ: 85.2 MB
-    理由: Rust/Cargo ビルド成果物（再ビルド可能）
+    理由: npm/yarn 依存関係（再インストール可能）
   パス: /home/user/venv
     サイズ: 45.6 MB
     理由: Python 仮想環境（不要な場合再作成可能）

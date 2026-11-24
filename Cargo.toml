@@ -3,7 +3,7 @@ name = "storage-scanner"
 version = "0.1.0"
 edition = "2021"
 description = "システムのストレージをスキャンし、巨大で不要なディレクトリを検出するツール"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/your-repo/storage-scanner"
 readme = "README.md"
 
